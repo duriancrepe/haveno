@@ -46,6 +46,8 @@ import javax.inject.Singleton;
 
 import com.google.common.util.concurrent.FutureCallback;
 
+import java.io.InputStream;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -72,6 +74,7 @@ public class CoreApi {
 
     @Getter
     private final Config config;
+    private final CoreAccountService coreAccountService;
     private final CoreDisputeAgentsService coreDisputeAgentsService;
     private final CoreHelpService coreHelpService;
     private final CoreOffersService coreOffersService;
@@ -84,6 +87,7 @@ public class CoreApi {
 
     @Inject
     public CoreApi(Config config,
+                   CoreAccountService coreAccountService,
                    CoreDisputeAgentsService coreDisputeAgentsService,
                    CoreHelpService coreHelpService,
                    CoreOffersService coreOffersService,
@@ -94,6 +98,7 @@ public class CoreApi {
                    TradeStatisticsManager tradeStatisticsManager,
                    CoreNotificationService notificationService) {
         this.config = config;
+        this.coreAccountService = coreAccountService;
         this.coreDisputeAgentsService = coreDisputeAgentsService;
         this.coreHelpService = coreHelpService;
         this.coreOffersService = coreOffersService;
@@ -108,6 +113,46 @@ public class CoreApi {
     @SuppressWarnings("SameReturnValue")
     public String getVersion() {
         return Version.VERSION;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // Account Service
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    public boolean accountExists() {
+        return coreAccountService.accountExists();
+    }
+
+    public InputStream backupAccount() throws Exception {
+        return coreAccountService.backupAccount();
+    }
+
+    public void changePassword(String password) {
+        coreAccountService.changePassword(password);
+    }
+
+    public void closeAccount() {
+        coreAccountService.closeAccount();
+    }
+
+    public void createAccount(String password) {
+        coreAccountService.createAccount(password);
+    }
+
+    public void deleteAccount() {
+        coreAccountService.deleteAccount();
+    }
+
+    public void openAccount(String password) {
+        coreAccountService.openAccount(password);
+    }
+
+    public boolean isAccountOpen() {
+        return coreAccountService.isAccountOpen();
+    }
+
+    public void restoreAccount(InputStream zipStream) throws Exception {
+        coreAccountService.restoreAccount(zipStream);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
