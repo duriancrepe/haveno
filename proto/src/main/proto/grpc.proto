@@ -44,9 +44,7 @@ service Account {
     }
     rpc OpenAccount(OpenAccountRequest) returns (OpenAccountReply) {
     }
-    rpc RestoreAccount(stream RestoreAccountRequest) returns (RestoreAccountReply) {
-    }
-    rpc RestoreAccountNoStream(RestoreAccountRequest) returns (RestoreAccountReply) {
+    rpc RestoreAccount(RestoreAccountRequest) returns (RestoreAccountReply) {
     }
 }
 
@@ -106,6 +104,9 @@ message OpenAccountReply {
 
 message RestoreAccountRequest {
     bytes zip_bytes = 1;
+    uint64 offset = 2;
+    uint64 total_length = 3;
+    bool has_more = 4;
 }
 
 message RestoreAccountReply {

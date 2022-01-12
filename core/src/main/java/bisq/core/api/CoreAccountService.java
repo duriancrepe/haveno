@@ -17,36 +17,49 @@
 
 package bisq.core.api;
 
-import bisq.core.account.AccountState;
+import bisq.core.user.User;
 
 import bisq.common.config.Config;
+import bisq.common.crypto.IncorrectPasswordException;
+import bisq.common.crypto.KeyRing;
+import bisq.common.crypto.KeyStorage;
+import bisq.common.file.FileUtil;
+import bisq.common.util.ZipUtil;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
-import java.io.IOException;
+import java.io.File;
 import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Manages the account state. A created account must have a password which encrypts
+ * all persistence in the PersistenceManager. As a result, opening the account requires
+ * a correct password to be passed in to deserialize the account properties that are
+ * persisted. It is possible to persist the objects without a password (legacy).
+ *
+ * Backup and restore flushes the persistence objects in the app folder and sends or
+ * restores a zip stream.
+ */
 @Singleton
 @Slf4j
 public class CoreAccountService {
 
-    private final Config config;
-    private AccountState accountState;
-
-    // Temp in memory variable for testing.
-    private boolean isOpen = false;
+    private Config config;
+    private User user;
+    private KeyStorage keyStorage;
+    private KeyRing keyRing;
 
     @Inject
-    public CoreAccountService(Config config) {
+    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing, User user) {
         this.config = config;
-        this.accountState = new AccountState();
+        this.user = user;
+        this.keyStorage = keyStorage;
+        this.keyRing = keyRing;
     }
 
     /**
@@ -54,29 +67,41 @@ public class CoreAccountService {
      * @return True if account exists.
      */
     public boolean accountExists() {
-        return accountState.accountExists;
+        // The public and private key pair indicate the existence of the account.
+        return keyStorage.allKeyFilesExist();
     }
 
     /**
      * Backup the account to a zip file. Throw error if !accountExists().
      * @return InputStream with the zip of the account.
      */
-    public InputStream backupAccount() throws Exception {
-
+    public InputStream backupAccount(int bufferSize) throws Exception {
         if (!accountExists()) {
             throw new IllegalStateException("Cannot backup non existing account");
         }
 
+        // Flush all known persistence objects to disk. The interface is async and
+        // must be blocking before the zip input stream is read from.
+        log.warn("Skip flushing data, currently deadlocks");
+        /*
+        PersistenceManager.flushAllDataToDiskAtBackup(() -> {
+            notify();
+        });
+        wait();
+        */
         // Pipe the serialized account object to stream which will be read by the gRPC client.
         try {
-            PipedInputStream in = new PipedInputStream();
-            ObjectOutputStream out = new ObjectOutputStream(new PipedOutputStream(in));
+            File dataDir = new File(config.appDataDir.getPath());
+            PipedInputStream in = new PipedInputStream(bufferSize);
+            PipedOutputStream out = new PipedOutputStream(in);
+            log.info("Zipping directory " + dataDir);
             new Thread(() -> {
                 try {
-                    out.writeObject(accountState);
-                    out.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                    ZipUtil.zipDirToStream(dataDir, out, bufferSize);
+                } catch (Exception ex) {
+                    // Should signal error using a delegate, otherwise the reader of
+                    // the input stream will end abruptly.
+                    ex.printStackTrace();
                 }
             }).start();
 
@@ -95,7 +120,8 @@ public class CoreAccountService {
             throw new IllegalStateException("Cannot change password on unopened account");
         }
 
-        accountState.password = password;
+        // Encrypt the keyring with the new password.
+        keyStorage.saveKeyRing(keyRing, password);
     }
 
     /**
@@ -106,7 +132,9 @@ public class CoreAccountService {
         if (!isAccountOpen()) {
             throw new IllegalStateException("Cannot close unopened account");
         }
-        this.isOpen = false;
+
+        // Closed account means the keys are locked.
+        keyRing.lockKeys();
     }
 
     /**
@@ -119,17 +147,26 @@ public class CoreAccountService {
             throw new IllegalStateException("Cannot create account if the account already exists");
         }
 
-        accountState.password = password;
-        accountState.accountExists = true;
+        // A new account has a set of keys, password protected.
+        keyRing.generateKeys(password);
+        keyStorage.saveKeyRing(keyRing, password);
     }
 
     /**
      * Permanently delete the Haveno account.
      */
     public void deleteAccount() {
-        this.isOpen = false;
-        accountState.accountExists = false;
-        accountState.password = null;
+        try {
+            // todo: shutdown the services provided in HavenoExecutable.java
+            //   The entire application should be modified to account for the this state.
+            //   For now simply delete the datadir which will result in no existing account.
+
+            keyRing.lockKeys();
+            File dataDir = new File(config.appDataDir.getPath());
+            FileUtil.deleteDirectory(dataDir, null, false);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     /**
@@ -140,10 +177,12 @@ public class CoreAccountService {
         if (!accountExists()) {
             throw new IllegalStateException("Cannot open account if account does not exist");
         }
-        if (password.equals(accountState.password)) {
-            this.isOpen = true;
+
+        try {
+            keyRing.unlockKeys(password);
+        } catch (IncorrectPasswordException ex) {
+            log.warn(ex.getMessage());
         }
-        // todo: consider changing to boolean return to indicate the account was not opened.
     }
 
     /**
@@ -151,17 +190,24 @@ public class CoreAccountService {
      * @return True if account is open.
      */
     public boolean isAccountOpen() {
-        return isOpen && accountState.accountExists && accountState.password != null;
+        return keyRing.isUnlocked() && accountExists();
     }
 
-    public void restoreAccount(InputStream zipStream) throws Exception {
+    /**
+     * Restore the account from a zip file. Throw error if accountExists().
+     * @param inputStream
+     * @throws Exception
+     */
+    public void restoreAccount(InputStream inputStream, int bufferSize) throws Exception {
         if (accountExists()) {
             throw new IllegalStateException("Cannot restore account if there is an existing account");
         }
 
-        ObjectInputStream in = new ObjectInputStream(zipStream);
-        accountState = (AccountState) in.readObject();
-    }
+        File dataDir = new File(config.appDataDir.getPath());
+        ZipUtil.unzipToDir(dataDir, inputStream, bufferSize);
 
+        // todo: Reload persisted objects possibly by restarting the app, but do not
+        //  overwrite the persistence on shutdown. This may be tricky to solve.
+    }
 
 }

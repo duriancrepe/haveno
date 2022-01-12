@@ -26,27 +26,80 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import javax.annotation.Nullable;
+
 @Getter
 @EqualsAndHashCode
 @Slf4j
 @Singleton
 public final class KeyRing {
-    private final KeyPair signatureKeyPair;
-    private final KeyPair encryptionKeyPair;
-    private final PubKeyRing pubKeyRing;
+
+    private KeyPair signatureKeyPair;
+    private KeyPair encryptionKeyPair;
+    private PubKeyRing pubKeyRing;
+
+    private KeyStorage keyStorage;
 
     @Inject
     public KeyRing(KeyStorage keyStorage) {
-        if (keyStorage.allKeyFilesExist()) {
-            signatureKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_SIGNATURE);
-            encryptionKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_ENCRYPTION);
-        } else {
-            // First time we create key pairs
-            signatureKeyPair = Sig.generateKeyPair();
-            encryptionKeyPair = Encryption.generateKeyPair();
-            keyStorage.saveKeyRing(this);
+        this.keyStorage = keyStorage;
+
+        // Attempt to unlock an unencrypted key storage (legacy).
+        try {
+            unlockKeys(null);
+        } catch(IncorrectPasswordException ex) {
+            log.warn(ex.getMessage());
         }
+        // If the keys cannot be loaded from file, recreate them in order for code to continue working.
+        // todo: remove when the application can handle locked keyring state throughout the application.
+        if (!isUnlocked())
+            generateKeys(null);
+    }
+
+    public boolean isUnlocked() {
+        boolean isUnlocked = this.signatureKeyPair != null
+                && this.encryptionKeyPair != null
+                && this.pubKeyRing != null;
+        return isUnlocked;
+    }
+
+    /**
+     * Locks the keyring disabling access to the keys until unlock is called.
+     * If the keys are never persisted then the keys are lost and will be regenerated.
+     */
+    public void lockKeys() {
+        signatureKeyPair = null;
+        encryptionKeyPair = null;
+        pubKeyRing = null;
+    }
+
+    /**
+     * Unlocks the keyring with a given password if required. If the keyring is already
+     * unlocked, do nothing.
+     * @param password Decrypts the or encrypts newly generated keys with the given password.
+     */
+    public void unlockKeys(@Nullable String password) throws IncorrectPasswordException {
+
+        if (isUnlocked())
+            return;
+
+        if (keyStorage.allKeyFilesExist()) {
+            signatureKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_SIGNATURE, password);
+            encryptionKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_ENCRYPTION, password);
+            if (signatureKeyPair != null && encryptionKeyPair != null)
+                pubKeyRing = new PubKeyRing(signatureKeyPair.getPublic(), encryptionKeyPair.getPublic());
+        }
+    }
+
+    /**
+     * Generates a new set of keys if the current keyring is closed.
+     * @param password
+     */
+    public void generateKeys(String password) {
+        signatureKeyPair = Sig.generateKeyPair();
+        encryptionKeyPair = Encryption.generateKeyPair();
         pubKeyRing = new PubKeyRing(signatureKeyPair.getPublic(), encryptionKeyPair.getPublic());
+        keyStorage.saveKeyRing(this, password);
     }
 
     // Don't print keys for security reasons

@@ -46,7 +46,6 @@ import javax.inject.Inject;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import java.io.File;
 import java.io.InputStream;
 
 import java.util.HashMap;
@@ -90,17 +89,24 @@ public class GrpcAccountService extends AccountImplBase {
     @Override
     public void backupAccount(BackupAccountRequest req, StreamObserver<BackupAccountReply> responseObserver) {
         try {
-            InputStream stream = coreApi.backupAccount();
-            // Send in 1MB chunks.
-            int bufferSize = 1024 * 1024;
+            // Send in large chunks to reduce unnecessary overhead.
+            // From current testing it appears that the haveno client gRPC-web is quite
+            // slow in processing the bytes on download.
+            int bufferSize = 1024 * 1024 * 8;
+            InputStream stream = coreApi.backupAccount(bufferSize);
+            log.info("Sending bytes in chunks of: " + bufferSize);
             byte[] buffer = new byte[bufferSize];
             int length;
+            int total = 0;
             while ((length = stream.read(buffer, 0, bufferSize)) != -1) {
+                log.info("Chunk size: " + length);
+                total += length;
                 var reply = BackupAccountReply.newBuilder()
                         .setZipBytes(ByteString.copyFrom(buffer, 0, length))
                         .build();
                 responseObserver.onNext(reply);
             }
+            log.info("Completed backup account total sent: " + total);
             stream.close();
             responseObserver.onCompleted();
         } catch (Throwable cause) {
@@ -187,42 +193,18 @@ public class GrpcAccountService extends AccountImplBase {
     }
 
     @Override
-    public StreamObserver<RestoreAccountRequest> restoreAccount(StreamObserver<RestoreAccountReply> responseObserver) {
-        return new StreamObserver<>() {
-
-            @Override
-            public void onNext(RestoreAccountRequest restoreAccountRequest) {
-                try {
-                    var stream = restoreAccountRequest.getZipBytes().newInput();
-                    // todo: This interface doesn't allow for chunked writing.
-                    //  It appears we need to write out the zip file and decompress and restore the account
-                    //  within the underlying service. For now, we read a byte stream of text settings to test.
-                    coreApi.restoreAccount(stream);
-                    stream.close();
-                } catch (Exception e) {
-                    this.onError(e);
-                }
-            }
-
-            @Override
-            public void onError(Throwable cause) {
-                exceptionHandler.handleException(log, cause, responseObserver);
-            }
-
-            @Override
-            public void onCompleted() {
-                RestoreAccountReply response = RestoreAccountReply.newBuilder()
-                        .build();
-                responseObserver.onNext(response);
-                responseObserver.onCompleted();
-            }
-        };
-    }
-
-    @Override
-    public void restoreAccountNoStream(RestoreAccountRequest req, StreamObserver<RestoreAccountReply> responseObserver) {
+    public void restoreAccount(RestoreAccountRequest req, StreamObserver<RestoreAccountReply> responseObserver) {
         try {
-            coreApi.restoreAccount(req.getZipBytes().newInput());
+            // If the entire zip is in memory, no need to write to disk.
+            // Restore the account directly from the zip stream.
+            if (!req.getHasMore() && req.getOffset() == 0) {
+                var inputStream = req.getZipBytes().newInput();
+                coreApi.restoreAccount(inputStream, 1024*64);
+            } else {
+                // TODO: write to temp file then restore the account from a filestream
+                //  when the last chunk of the file is written.
+            }
+
             var reply = RestoreAccountReply.newBuilder()
                     .build();
             responseObserver.onNext(reply);

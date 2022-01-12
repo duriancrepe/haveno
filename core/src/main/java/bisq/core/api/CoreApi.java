@@ -123,8 +123,8 @@ public class CoreApi {
         return coreAccountService.accountExists();
     }
 
-    public InputStream backupAccount() throws Exception {
-        return coreAccountService.backupAccount();
+    public InputStream backupAccount(int bufferSize) throws Exception {
+        return coreAccountService.backupAccount(bufferSize);
     }
 
     public void changePassword(String password) {
@@ -151,8 +151,8 @@ public class CoreApi {
         return coreAccountService.isAccountOpen();
     }
 
-    public void restoreAccount(InputStream zipStream) throws Exception {
-        coreAccountService.restoreAccount(zipStream);
+    public void restoreAccount(InputStream zipStream, int bufferSize) throws Exception {
+        coreAccountService.restoreAccount(zipStream, bufferSize);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
