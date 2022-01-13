@@ -24,6 +24,7 @@ import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.crypto.KeyRing;
 import bisq.common.crypto.KeyStorage;
 import bisq.common.file.FileUtil;
+import bisq.common.persistence.PersistenceManager;
 import bisq.common.util.ZipUtil;
 
 import javax.inject.Inject;
@@ -33,6 +34,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.util.function.Consumer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -75,40 +77,32 @@ public class CoreAccountService {
      * Backup the account to a zip file. Throw error if !accountExists().
      * @return InputStream with the zip of the account.
      */
-    public InputStream backupAccount(int bufferSize) throws Exception {
+    public void backupAccount(int bufferSize, Consumer<InputStream> consume, Consumer<Exception> error) {
         if (!accountExists()) {
             throw new IllegalStateException("Cannot backup non existing account");
         }
 
-        // Flush all known persistence objects to disk. The interface is async and
-        // must be blocking before the zip input stream is read from.
-        log.warn("Skip flushing data, currently deadlocks");
-        /*
+        // Flush all known persistence objects to disk.
         PersistenceManager.flushAllDataToDiskAtBackup(() -> {
-            notify();
-        });
-        wait();
-        */
-        // Pipe the serialized account object to stream which will be read by the gRPC client.
-        try {
-            File dataDir = new File(config.appDataDir.getPath());
-            PipedInputStream in = new PipedInputStream(bufferSize);
-            PipedOutputStream out = new PipedOutputStream(in);
-            log.info("Zipping directory " + dataDir);
-            new Thread(() -> {
-                try {
-                    ZipUtil.zipDirToStream(dataDir, out, bufferSize);
-                } catch (Exception ex) {
-                    // Should signal error using a delegate, otherwise the reader of
-                    // the input stream will end abruptly.
-                    ex.printStackTrace();
-                }
-            }).start();
+            // Pipe the serialized account object to stream which will be read by the consumer.
+            try {
+                File dataDir = new File(config.appDataDir.getPath());
+                PipedInputStream in = new PipedInputStream(bufferSize);
+                PipedOutputStream out = new PipedOutputStream(in);
+                log.info("Zipping directory " + dataDir);
+                new Thread(() -> {
+                    try {
+                        ZipUtil.zipDirToStream(dataDir, out, bufferSize);
+                    } catch (Exception ex) {
+                        error.accept(ex);
+                    }
+                }).start();
 
-            return in;
-        } catch (java.io.IOException ex) {
-            throw new Exception("Error occurred while while backing up account", ex);
-        }
+                consume.accept(in);
+            } catch (java.io.IOException ex) {
+                error.accept(ex);
+            }
+        });
     }
 
     /**

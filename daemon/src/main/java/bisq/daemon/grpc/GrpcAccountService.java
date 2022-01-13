@@ -88,30 +88,36 @@ public class GrpcAccountService extends AccountImplBase {
 
     @Override
     public void backupAccount(BackupAccountRequest req, StreamObserver<BackupAccountReply> responseObserver) {
+
+        // Send in large chunks to reduce unnecessary overhead. Typical backup will not be more than a few MB.
+        // From current testing it appears that client gRPC-web is slow in processing the bytes on download.
         try {
-            // Send in large chunks to reduce unnecessary overhead.
-            // From current testing it appears that the haveno client gRPC-web is quite
-            // slow in processing the bytes on download.
             int bufferSize = 1024 * 1024 * 8;
-            InputStream stream = coreApi.backupAccount(bufferSize);
-            log.info("Sending bytes in chunks of: " + bufferSize);
-            byte[] buffer = new byte[bufferSize];
-            int length;
-            int total = 0;
-            while ((length = stream.read(buffer, 0, bufferSize)) != -1) {
-                log.info("Chunk size: " + length);
-                total += length;
-                var reply = BackupAccountReply.newBuilder()
-                        .setZipBytes(ByteString.copyFrom(buffer, 0, length))
-                        .build();
-                responseObserver.onNext(reply);
-            }
-            log.info("Completed backup account total sent: " + total);
-            stream.close();
-            responseObserver.onCompleted();
+            coreApi.backupAccount(bufferSize, (stream) -> {
+                try {
+                    log.info("Sending bytes in chunks of: " + bufferSize);
+                    byte[] buffer = new byte[bufferSize];
+                    int length;
+                    int total = 0;
+                    while ((length = stream.read(buffer, 0, bufferSize)) != -1) {
+                        log.info("Chunk size: " + length);
+                        total += length;
+                        var reply = BackupAccountReply.newBuilder()
+                                .setZipBytes(ByteString.copyFrom(buffer, 0, length))
+                                .build();
+                        responseObserver.onNext(reply);
+                    }
+                    log.info("Completed backup account total sent: " + total);
+                    stream.close();
+                    responseObserver.onCompleted();
+                } catch (Exception ex) {
+                    exceptionHandler.handleException(log, ex, responseObserver);
+                }
+            }, (ex) -> exceptionHandler.handleException(log, ex, responseObserver));
         } catch (Throwable cause) {
             exceptionHandler.handleException(log, cause, responseObserver);
         }
+
     }
 
     @Override

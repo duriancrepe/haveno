@@ -123,8 +123,8 @@ public class CoreApi {
         return coreAccountService.accountExists();
     }
 
-    public InputStream backupAccount(int bufferSize) throws Exception {
-        return coreAccountService.backupAccount(bufferSize);
+    public void backupAccount(int bufferSize, Consumer<InputStream> consume, Consumer<Exception> error) {
+        coreAccountService.backupAccount(bufferSize, consume, error);
     }
 
     public void changePassword(String password) {

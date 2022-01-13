@@ -114,9 +114,9 @@ public class PersistenceManager<T extends PersistableEnvelope> {
             return;
         }
 
-
         // We don't know from which thread we are called so we map to user thread
         UserThread.execute(() -> {
+
             if (doShutdown) {
                 if (flushAtShutdownCalled) {
                     log.warn("We got flushAllDataToDisk called again. This can happen in some rare cases. We ignore the repeated call.");
