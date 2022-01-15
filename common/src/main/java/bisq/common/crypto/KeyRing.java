@@ -40,20 +40,30 @@ public final class KeyRing {
 
     private KeyStorage keyStorage;
 
+    /**
+     * Creates the KeyRing. Unlocks if not encrypted. Does not generate keys.
+     * @param keyStorage Persisted storage
+     */
     @Inject
     public KeyRing(KeyStorage keyStorage) {
+        this(keyStorage, null, false);
+    }
+
+    /**
+     * Creates KeyRing with a password. Attempts to generate keys if they don't exist.
+     * @param keyStorage Persisted storage
+     * @param password The password to unlock the keys or to generate new keys, nullable.
+     * @param generateKeys Generate new keys with password if not created yet.
+     */
+    public KeyRing(KeyStorage keyStorage, String password, boolean generateKeys) {
         this.keyStorage = keyStorage;
 
-        // Attempt to unlock an unencrypted key storage (legacy).
         try {
-            unlockKeys(null);
+            unlockKeys(password, generateKeys);
         } catch(IncorrectPasswordException ex) {
-            log.warn(ex.getMessage());
+            log.info("Account is password protected, waiting for user to openAccount");
+            return;
         }
-        // If the keys cannot be loaded from file, recreate them in order for code to continue working.
-        // todo: remove when the application can handle locked keyring state throughout the application.
-        if (!isUnlocked())
-            generateKeys(null);
     }
 
     public boolean isUnlocked() {
@@ -77,18 +87,23 @@ public final class KeyRing {
      * Unlocks the keyring with a given password if required. If the keyring is already
      * unlocked, do nothing.
      * @param password Decrypts the or encrypts newly generated keys with the given password.
+     * @return Whether KeyRing is unlocked
      */
-    public void unlockKeys(@Nullable String password) throws IncorrectPasswordException {
+    public boolean unlockKeys(@Nullable String password, boolean generateKeys) throws IncorrectPasswordException {
 
         if (isUnlocked())
-            return;
+            return true;
 
         if (keyStorage.allKeyFilesExist()) {
             signatureKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_SIGNATURE, password);
             encryptionKeyPair = keyStorage.loadKeyPair(KeyStorage.KeyEntry.MSG_ENCRYPTION, password);
             if (signatureKeyPair != null && encryptionKeyPair != null)
                 pubKeyRing = new PubKeyRing(signatureKeyPair.getPublic(), encryptionKeyPair.getPublic());
+        } else if (generateKeys) {
+            generateKeys(password);
         }
+
+        return isUnlocked();
     }
 
     /**

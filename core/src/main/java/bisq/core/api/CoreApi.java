@@ -33,6 +33,7 @@ import bisq.core.trade.statistics.TradeStatisticsManager;
 
 import bisq.common.app.Version;
 import bisq.common.config.Config;
+import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.handlers.ErrorMessageHandler;
 import bisq.common.handlers.ResultHandler;
 
@@ -144,7 +145,11 @@ public class CoreApi {
     }
 
     public void openAccount(String password) {
-        coreAccountService.openAccount(password);
+        try {
+            coreAccountService.openAccount(password);
+        } catch (IncorrectPasswordException ipe) {
+            log.warn(ipe.getMessage());
+        }
     }
 
     public boolean isAccountOpen() {

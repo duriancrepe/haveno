@@ -382,6 +382,11 @@ public class PersistenceManager<T extends PersistableEnvelope> {
             return;
         }
 
+        if (!initCalled.get()) {
+            log.warn("requestPersistence called before init. Ignoring request");
+            return;
+        }
+
         persistenceRequested = true;
 
         // If we have not initialized yet we postpone the start of the timer and call maybeStartTimerForPersistence at

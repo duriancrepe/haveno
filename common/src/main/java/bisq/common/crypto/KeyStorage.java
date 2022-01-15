@@ -140,8 +140,7 @@ public class KeyStorage {
                 byte[] magicBytes = Arrays.copyOfRange(encodedPrivateKey, 0, ENCRYPTED_FORMAT_MAGIC.length);
                 boolean isEncryptedPassword = Arrays.compare(magicBytes, ENCRYPTED_FORMAT_MAGIC) == 0;
                 if (isEncryptedPassword && password == null) {
-                    log.warn("Cannot load encrypted keys, user must open account with password " + filePrivateKey);
-                    return null;
+                    throw new IncorrectPasswordException("Cannot load encrypted keys, user must open account with password " + filePrivateKey);
                 } else if (password != null && !isEncryptedPassword) {
                     log.warn("Password not needed for unencrypted key " + filePrivateKey);
                 }

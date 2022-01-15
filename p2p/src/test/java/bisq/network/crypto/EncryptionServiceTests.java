@@ -45,7 +45,6 @@ public class EncryptionServiceTests {
     @Rule
     public ExpectedException thrown = ExpectedException.none();
 
-    private PubKeyRing pubKeyRing;
     private KeyRing keyRing;
     private File dir;
 
@@ -58,7 +57,7 @@ public class EncryptionServiceTests {
         //noinspection ResultOfMethodCallIgnored
         dir.mkdir();
         KeyStorage keyStorage = new KeyStorage(dir);
-        keyRing = new KeyRing(keyStorage);
+        keyRing = new KeyRing(keyStorage, null, true);
         pubKeyRing = keyRing.getPubKeyRing();
     }
 

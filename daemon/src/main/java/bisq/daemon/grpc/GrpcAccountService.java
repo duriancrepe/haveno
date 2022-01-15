@@ -46,8 +46,6 @@ import javax.inject.Inject;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import java.io.InputStream;
-
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -117,7 +115,6 @@ public class GrpcAccountService extends AccountImplBase {
         } catch (Throwable cause) {
             exceptionHandler.handleException(log, cause, responseObserver);
         }
-
     }
 
     @Override

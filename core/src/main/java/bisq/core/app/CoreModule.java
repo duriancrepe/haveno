@@ -91,6 +91,5 @@ public class CoreModule extends AppModule {
         install(new AlertModule(config));
         install(new FilterModule(config));
         install(new CorePresentationModule(config));
-        bind(PubKeyRing.class).toProvider(PubKeyRingProvider.class);
     }
 }

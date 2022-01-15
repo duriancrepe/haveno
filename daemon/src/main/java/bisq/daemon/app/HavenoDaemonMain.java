@@ -23,16 +23,17 @@ import bisq.core.app.CoreModule;
 
 import bisq.common.UserThread;
 import bisq.common.app.AppModule;
+import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.handlers.ResultHandler;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import java.io.Console;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import lombok.extern.slf4j.Slf4j;
-
-
 
 import bisq.daemon.grpc.GrpcServer;
 
@@ -61,7 +62,6 @@ public class HavenoDaemonMain extends HavenoHeadlessAppMain implements HavenoSet
     @Override
     protected void launchApplication() {
         headlessApp = new HavenoDaemon();
-
         UserThread.execute(this::onApplicationLaunched);
     }
 
@@ -101,15 +101,103 @@ public class HavenoDaemonMain extends HavenoHeadlessAppMain implements HavenoSet
     @Override
     protected void onApplicationStarted() {
         super.onApplicationStarted();
-
-        grpcServer = injector.getInstance(GrpcServer.class);
-        grpcServer.start();
     }
 
     @Override
     public void gracefulShutDown(ResultHandler resultHandler) {
         super.gracefulShutDown(resultHandler);
 
-        grpcServer.shutdown();
+        // could be null if application attempted to shutdown early.
+        if (grpcServer != null)
+            grpcServer.shutdown();
     }
+
+    /**
+     * Start the grpcServer to allow logging in remotely.
+     */
+    @Override
+    protected boolean loginAccount() {
+        boolean opened = super.loginAccount();
+
+        // Start rpc server in case login is coming in from rpc
+        grpcServer = injector.getInstance(GrpcServer.class);
+        grpcServer.start();
+
+        if (!opened) {
+            // Nonblocking, we need to stop if the login occurred through rpc.
+            // TODO: add a mode to mask password
+            ConsoleInput reader = new ConsoleInput(Integer.MAX_VALUE, Integer.MAX_VALUE, TimeUnit.MILLISECONDS);
+            Thread t = new Thread(() -> {
+                interactiveLogin(reader);
+            });
+            t.start();
+
+            // Handle asynchronous account opens.
+            // Will need to also close and reopen account.
+            accountService.addAccountOpenHandler(() -> {
+                log.info("Logged in successfully through rpc");
+                // Closing the reader will stop all read attempts and end the interactive login thread.
+                reader.cancel();
+            });
+
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                // expected
+            }
+            accountService.clearAccountOpenHandlers();
+            opened = accountService.isAccountOpen();
+        }
+
+        return opened;
+    }
+
+    /**
+     * Asks user for login. TODO: Implement in the desktop app.
+     */
+    protected boolean interactiveLogin(ConsoleInput reader) {
+        Console console = System.console();
+
+        if (console == null) {
+            log.warn("No console available, account must be opened through rpc");
+            return false;
+        }
+
+        String openedOrCreated = "Account unlocked\n";
+        boolean accountExists = accountService.accountExists();
+        while (!accountService.isAccountOpen()) {
+            try {
+                if (accountExists) {
+                    try {
+                        // readPassword will not return until the user inputs something
+                        // which is not suitable if we are waiting for rpc call which
+                        // could login the account. Must be able to interrupt the read.
+                        //new String(console.readPassword("Password:"));
+                        console.printf("Password:\n");
+                        String password = reader.readLine();
+                        accountService.openAccount(password);
+                    } catch (IncorrectPasswordException ipe) {
+                        console.printf("Incorrect password\n");
+                    }
+                } else {
+                    console.printf("Creating a new account\n");
+                    console.printf("Password:\n");
+                    String password = reader.readLine();
+                    console.printf("Confirm:\n");
+                    String passwordConfirm = reader.readLine();
+                    if (password.equals(passwordConfirm)) {
+                        accountService.createAccount(password);
+                        openedOrCreated = "Account created\n";
+                    } else {
+                        console.printf("Passwords did not match\n");
+                    }
+                }
+            } catch (Exception ex) {
+                log.debug(ex.getMessage());
+            }
+        }
+        console.printf(openedOrCreated);
+        return true;
+    }
+
 }

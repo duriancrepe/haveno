@@ -34,6 +34,9 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 import lombok.extern.slf4j.Slf4j;
@@ -56,12 +59,22 @@ public class CoreAccountService {
     private KeyStorage keyStorage;
     private KeyRing keyRing;
 
+    private final List<Runnable> accountOpenHandlers = new ArrayList<>();
+
     @Inject
     public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing, User user) {
         this.config = config;
         this.user = user;
         this.keyStorage = keyStorage;
         this.keyRing = keyRing;
+    }
+
+    public void addAccountOpenHandler(Runnable handler) {
+        accountOpenHandlers.add(handler);
+    }
+
+    public void clearAccountOpenHandlers() {
+        accountOpenHandlers.clear();
     }
 
     /**
@@ -144,6 +157,7 @@ public class CoreAccountService {
         // A new account has a set of keys, password protected.
         keyRing.generateKeys(password);
         keyStorage.saveKeyRing(keyRing, password);
+        accountOpenHandlers.forEach(Runnable::run);
     }
 
     /**
@@ -154,6 +168,7 @@ public class CoreAccountService {
             // todo: shutdown the services provided in HavenoExecutable.java
             //   The entire application should be modified to account for the this state.
             //   For now simply delete the datadir which will result in no existing account.
+            //   It may be good enough to shutdown + restart the app.
 
             keyRing.lockKeys();
             File dataDir = new File(config.appDataDir.getPath());
@@ -167,13 +182,15 @@ public class CoreAccountService {
      * Open existing account. Throw error if `!accountExists()
      * @param password The password for the account.
      */
-    public void openAccount(String password) {
+    public void openAccount(String password) throws IncorrectPasswordException {
         if (!accountExists()) {
             throw new IllegalStateException("Cannot open account if account does not exist");
         }
 
         try {
-            keyRing.unlockKeys(password);
+            if (keyRing.unlockKeys(password, false)) {
+                accountOpenHandlers.forEach(Runnable::run);
+            }
         } catch (IncorrectPasswordException ex) {
             log.warn(ex.getMessage());
         }

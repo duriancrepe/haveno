@@ -17,6 +17,7 @@
 
 package bisq.core.app;
 
+import bisq.core.api.CoreAccountService;
 import bisq.core.btc.setup.WalletsSetup;
 import bisq.core.btc.wallet.BtcWalletService;
 import bisq.core.btc.wallet.XmrWalletService;
@@ -35,6 +36,7 @@ import bisq.common.app.AppModule;
 import bisq.common.config.HavenoHelpFormatter;
 import bisq.common.config.Config;
 import bisq.common.config.ConfigException;
+import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.handlers.ResultHandler;
 import bisq.common.persistence.PersistenceManager;
 import bisq.common.proto.persistable.PersistedDataHost;
@@ -64,6 +66,7 @@ public abstract class HavenoExecutable implements GracefulShutDownHandler, Haven
     private final String appName;
     private final String version;
 
+    protected CoreAccountService accountService;
     protected Injector injector;
     protected AppModule module;
     protected Config config;
@@ -136,14 +139,21 @@ public abstract class HavenoExecutable implements GracefulShutDownHandler, Haven
         setupGuice();
         setupAvoidStandbyMode();
 
+
+        // If user tried to downgrade we do not read the persisted data to avoid data corruption
+        // We call startApplication to enable UI to show popup. We prevent in HavenoSetup to go further
+        // in the process and require a shut down.
         hasDowngraded = HavenoSetup.hasDowngraded();
-        if (hasDowngraded) {
-            // If user tried to downgrade we do not read the persisted data to avoid data corruption
-            // We call startApplication to enable UI to show popup. We prevent in HavenoSetup to go further
-            // in the process and require a shut down.
-            startApplication();
-        } else {
+
+        // Account service should be available before attempting to login.
+        accountService = injector.getInstance(CoreAccountService.class);
+
+        // Attempt to login, subclasses should implement interactive login and or rpc login.
+        if (!hasDowngraded && loginAccount()) {
             readAllPersisted(this::startApplication);
+        } else {
+            log.warn("Running application in readonly mode");
+            startApplication();
         }
     }
 
@@ -307,4 +317,23 @@ public abstract class HavenoExecutable implements GracefulShutDownHandler, Haven
         if (doShutDown)
             gracefulShutDown(() -> log.info("gracefulShutDown complete"));
     }
+
+    /**
+     * Attempt to login. TODO: supply a password in config or args
+     * @return true if account is opened successfully.
+     */
+    protected boolean loginAccount() {
+        boolean accountOpened = false;
+        if (accountService.accountExists()) {
+            log.info("Previously persisted Haveno account detected, attempting to open");
+            try {
+                accountService.openAccount(null);
+                accountOpened = accountService.isAccountOpen();
+            } catch (IncorrectPasswordException ipe) {
+                log.info("Account password protected, password required");
+            }
+        }
+        return accountOpened;
+    }
+
 }
