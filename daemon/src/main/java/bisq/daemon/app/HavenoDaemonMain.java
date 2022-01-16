@@ -29,6 +29,8 @@ import bisq.common.handlers.ResultHandler;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import java.io.Console;
+
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -134,17 +136,22 @@ public class HavenoDaemonMain extends HavenoHeadlessAppMain implements HavenoSet
 
             // Handle asynchronous account opens.
             // Will need to also close and reopen account.
-            accountService.addAccountOpenHandler(() -> {
+            accountService.setAccountOpenedHandler(() -> {
                 log.info("Logged in successfully through rpc");
                 // Closing the reader will stop all read attempts and end the interactive login thread.
                 reader.cancel();
             });
 
             try {
-                t.join();
+                // Wait until interactive login or rpc. Check one more time if account is open to close race condition.
+                if (!accountService.isAccountOpen()) {
+                    log.info("Interactive login required");
+                    t.join();
+                }
             } catch (InterruptedException e) {
                 // expected
             }
+
             accountService.clearAccountOpenHandlers();
             opened = accountService.isAccountOpen();
         }
@@ -154,12 +161,19 @@ public class HavenoDaemonMain extends HavenoHeadlessAppMain implements HavenoSet
 
     /**
      * Asks user for login. TODO: Implement in the desktop app.
+     * @return True if user logged in interactively.
      */
     protected boolean interactiveLogin(ConsoleInput reader) {
         Console console = System.console();
-
         if (console == null) {
+            // The ConsoleInput class reads from system.in, can wait for input without a console.
             log.warn("No console available, account must be opened through rpc");
+            try {
+                // If user logs in through rpc, the reader will be interrupted through the event.
+                reader.readLine();
+            } catch (InterruptedException | CancellationException ex) {
+                log.info("Reader interrupted, continuing startup");
+            }
             return false;
         }
 
@@ -173,30 +187,31 @@ public class HavenoDaemonMain extends HavenoHeadlessAppMain implements HavenoSet
                         // which is not suitable if we are waiting for rpc call which
                         // could login the account. Must be able to interrupt the read.
                         //new String(console.readPassword("Password:"));
-                        console.printf("Password:\n");
+                        System.out.printf("Password:\n");
                         String password = reader.readLine();
                         accountService.openAccount(password);
                     } catch (IncorrectPasswordException ipe) {
-                        console.printf("Incorrect password\n");
+                        System.out.printf("Incorrect password\n");
                     }
                 } else {
-                    console.printf("Creating a new account\n");
-                    console.printf("Password:\n");
+                    System.out.printf("Creating a new account\n");
+                    System.out.printf("Password:\n");
                     String password = reader.readLine();
-                    console.printf("Confirm:\n");
+                    System.out.printf("Confirm:\n");
                     String passwordConfirm = reader.readLine();
                     if (password.equals(passwordConfirm)) {
                         accountService.createAccount(password);
                         openedOrCreated = "Account created\n";
                     } else {
-                        console.printf("Passwords did not match\n");
+                        System.out.printf("Passwords did not match\n");
                     }
                 }
             } catch (Exception ex) {
                 log.debug(ex.getMessage());
+                return false;
             }
         }
-        console.printf(openedOrCreated);
+        System.out.printf(openedOrCreated);
         return true;
     }
 

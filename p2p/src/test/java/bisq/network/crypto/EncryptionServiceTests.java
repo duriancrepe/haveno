@@ -20,7 +20,6 @@ package bisq.network.crypto;
 import bisq.common.crypto.CryptoException;
 import bisq.common.crypto.KeyRing;
 import bisq.common.crypto.KeyStorage;
-import bisq.common.crypto.PubKeyRing;
 import bisq.common.file.FileUtil;
 import bisq.common.proto.network.NetworkEnvelope;
 
@@ -58,7 +57,6 @@ public class EncryptionServiceTests {
         dir.mkdir();
         KeyStorage keyStorage = new KeyStorage(dir);
         keyRing = new KeyRing(keyStorage, null, true);
-        pubKeyRing = keyRing.getPubKeyRing();
     }
 
     @After

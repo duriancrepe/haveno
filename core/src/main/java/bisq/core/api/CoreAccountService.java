@@ -17,8 +17,6 @@
 
 package bisq.core.api;
 
-import bisq.core.user.User;
-
 import bisq.common.config.Config;
 import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.crypto.KeyRing;
@@ -35,8 +33,6 @@ import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 
 import lombok.extern.slf4j.Slf4j;
@@ -55,26 +51,34 @@ import lombok.extern.slf4j.Slf4j;
 public class CoreAccountService {
 
     private Config config;
-    private User user;
     private KeyStorage keyStorage;
     private KeyRing keyRing;
 
-    private final List<Runnable> accountOpenHandlers = new ArrayList<>();
+    private Runnable accountOpenedHandler;
+    private Consumer<Runnable> accountDeletedHandler;
+    private Consumer<Runnable> accountRestoredHandler;
 
     @Inject
-    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing, User user) {
+    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing) {
         this.config = config;
-        this.user = user;
         this.keyStorage = keyStorage;
         this.keyRing = keyRing;
     }
 
-    public void addAccountOpenHandler(Runnable handler) {
-        accountOpenHandlers.add(handler);
+    public void setAccountDeletedHandler(Consumer<Runnable> handler) {
+        accountDeletedHandler = handler;
+    }
+
+    public void setAccountRestoredHandler(Consumer<Runnable> handler) {
+        accountRestoredHandler = handler;
+    }
+
+    public void setAccountOpenedHandler(Runnable handler) {
+        accountOpenedHandler = handler;
     }
 
     public void clearAccountOpenHandlers() {
-        accountOpenHandlers.clear();
+        accountOpenedHandler = null;
     }
 
     /**
@@ -157,22 +161,23 @@ public class CoreAccountService {
         // A new account has a set of keys, password protected.
         keyRing.generateKeys(password);
         keyStorage.saveKeyRing(keyRing, password);
-        accountOpenHandlers.forEach(Runnable::run);
+
+        if (accountOpenedHandler != null)
+            accountOpenedHandler.run();
     }
 
     /**
      * Permanently delete the Haveno account.
      */
-    public void deleteAccount() {
+    public void deleteAccount(Runnable onShutdown) {
         try {
-            // todo: shutdown the services provided in HavenoExecutable.java
-            //   The entire application should be modified to account for the this state.
-            //   For now simply delete the datadir which will result in no existing account.
-            //   It may be good enough to shutdown + restart the app.
-
             keyRing.lockKeys();
             File dataDir = new File(config.appDataDir.getPath());
             FileUtil.deleteDirectory(dataDir, null, false);
+            if (accountDeletedHandler != null) {
+                log.info("Calling deleteAccount handler");
+                accountDeletedHandler.accept(onShutdown);
+            }
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -188,9 +193,9 @@ public class CoreAccountService {
         }
 
         try {
-            if (keyRing.unlockKeys(password, false)) {
-                accountOpenHandlers.forEach(Runnable::run);
-            }
+            if (keyRing.unlockKeys(password, false))
+                if (accountOpenedHandler != null)
+                    accountOpenedHandler.run();
         } catch (IncorrectPasswordException ex) {
             log.warn(ex.getMessage());
         }
@@ -209,16 +214,15 @@ public class CoreAccountService {
      * @param inputStream
      * @throws Exception
      */
-    public void restoreAccount(InputStream inputStream, int bufferSize) throws Exception {
+    public void restoreAccount(InputStream inputStream, int bufferSize, Runnable onShutdown) throws Exception {
         if (accountExists()) {
             throw new IllegalStateException("Cannot restore account if there is an existing account");
         }
 
         File dataDir = new File(config.appDataDir.getPath());
         ZipUtil.unzipToDir(dataDir, inputStream, bufferSize);
-
-        // todo: Reload persisted objects possibly by restarting the app, but do not
-        //  overwrite the persistence on shutdown. This may be tricky to solve.
+        if (accountRestoredHandler != null)
+            accountRestoredHandler.accept(onShutdown);
     }
 
 }

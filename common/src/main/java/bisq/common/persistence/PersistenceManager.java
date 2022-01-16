@@ -230,6 +230,7 @@ public class PersistenceManager<T extends PersistableEnvelope> {
     public PersistenceManager(@Named(Config.STORAGE_DIR) File dir,
                               PersistenceProtoResolver persistenceProtoResolver,
                               CorruptedStorageFileHandler corruptedStorageFileHandler) {
+        // If we turned off persistence and is shutting down skip these checks.
         this.dir = checkDir(dir);
         this.persistenceProtoResolver = persistenceProtoResolver;
         this.corruptedStorageFileHandler = corruptedStorageFileHandler;

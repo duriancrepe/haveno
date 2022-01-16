@@ -46,6 +46,10 @@ import javax.inject.Inject;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -64,6 +68,9 @@ public class GrpcAccountService extends AccountImplBase {
 
     private final CoreApi coreApi;
     private final GrpcExceptionHandler exceptionHandler;
+
+    // Temp in memory stream for restoring account.
+    private ByteArrayOutputStream tempStream;
 
     @Inject
     public GrpcAccountService(CoreApi coreApi, GrpcExceptionHandler exceptionHandler) {
@@ -159,11 +166,15 @@ public class GrpcAccountService extends AccountImplBase {
     @Override
     public void deleteAccount(DeleteAccountRequest req, StreamObserver<DeleteAccountReply> responseObserver) {
         try {
-            coreApi.deleteAccount();
-            var reply = DeleteAccountReply.newBuilder()
-                    .build();
-            responseObserver.onNext(reply);
-            responseObserver.onCompleted();
+            log.warn("Got deleteAccount request");
+            // Delete account requires a long shutdown, reply after its completed.
+            coreApi.deleteAccount(() ->{
+                var reply = DeleteAccountReply.newBuilder().build();
+                log.info("DeleteAccount completed, replying to rpc client");
+                responseObserver.onNext(reply);
+                responseObserver.onCompleted();
+                log.info("DeleteAccount continuing to shutdown process");
+            });
         } catch (Throwable cause) {
             exceptionHandler.handleException(log, cause, responseObserver);
         }
@@ -186,8 +197,7 @@ public class GrpcAccountService extends AccountImplBase {
     public void openAccount(OpenAccountRequest req, StreamObserver<OpenAccountReply> responseObserver) {
         try {
             coreApi.openAccount(req.getPassword());
-            var reply = OpenAccountReply.newBuilder()
-                    .build();
+            var reply = OpenAccountReply.newBuilder().build();
             responseObserver.onNext(reply);
             responseObserver.onCompleted();
         } catch (Throwable cause) {
@@ -198,20 +208,53 @@ public class GrpcAccountService extends AccountImplBase {
     @Override
     public void restoreAccount(RestoreAccountRequest req, StreamObserver<RestoreAccountReply> responseObserver) {
         try {
+            // Fail fast since uploading and processing bytes takes resources.
+            if (coreApi.accountExists()) {
+                throw new IllegalStateException("Cannot restore account if there is an existing account");
+            }
+
             // If the entire zip is in memory, no need to write to disk.
             // Restore the account directly from the zip stream.
             if (!req.getHasMore() && req.getOffset() == 0) {
                 var inputStream = req.getZipBytes().newInput();
-                coreApi.restoreAccount(inputStream, 1024*64);
+                coreApi.restoreAccount(inputStream, 1024 * 64, () -> {
+                    var reply = RestoreAccountReply.newBuilder().build();
+                    log.info("RestoreAccount completed, replying to rpc client");
+                    responseObserver.onNext(reply);
+                    responseObserver.onCompleted();
+                    log.info("RestoreAccount continuing to shutdown process");
+                });
             } else {
-                // TODO: write to temp file then restore the account from a filestream
-                //  when the last chunk of the file is written.
-            }
+                if (req.getOffset() == 0) {
+                    log.info("RestoreAccount starting new chunked zip");
+                    tempStream = new ByteArrayOutputStream((int) req.getTotalLength());
+                }
+                if (tempStream.size() != req.getOffset()) {
+                    log.warn("Stream offset doesn't match current position");
+                    IllegalStateException cause = new IllegalStateException("Stream offset doesn't match current position");
+                    exceptionHandler.handleException(log, cause, responseObserver);
+                } else {
+                    log.info("RestoreAccount writing chunk size " + req.getZipBytes().size());
+                    req.getZipBytes().writeTo(tempStream);
+                }
 
-            var reply = RestoreAccountReply.newBuilder()
-                    .build();
-            responseObserver.onNext(reply);
-            responseObserver.onCompleted();
+                if (!req.getHasMore()) {
+                    var inputStream = new ByteArrayInputStream(tempStream.toByteArray());
+                    tempStream.close();
+                    tempStream = null;
+                    coreApi.restoreAccount(inputStream, 1024 * 64, () -> {
+                        var reply = RestoreAccountReply.newBuilder().build();
+                        log.info("RestoreAccount completed, replying to rpc client");
+                        responseObserver.onNext(reply);
+                        responseObserver.onCompleted();
+                        log.info("RestoreAccount continuing to shutdown process");
+                    });
+                } else {
+                    var reply = RestoreAccountReply.newBuilder().build();
+                    responseObserver.onNext(reply);
+                    responseObserver.onCompleted();
+                }
+            }
         } catch (Throwable cause) {
             exceptionHandler.handleException(log, cause, responseObserver);
         }

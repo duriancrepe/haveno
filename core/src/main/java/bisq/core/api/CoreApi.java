@@ -140,8 +140,8 @@ public class CoreApi {
         coreAccountService.createAccount(password);
     }
 
-    public void deleteAccount() {
-        coreAccountService.deleteAccount();
+    public void deleteAccount(Runnable onShutdown) {
+        coreAccountService.deleteAccount(onShutdown);
     }
 
     public void openAccount(String password) {
@@ -156,8 +156,8 @@ public class CoreApi {
         return coreAccountService.isAccountOpen();
     }
 
-    public void restoreAccount(InputStream zipStream, int bufferSize) throws Exception {
-        coreAccountService.restoreAccount(zipStream, bufferSize);
+    public void restoreAccount(InputStream zipStream, int bufferSize, Runnable onShutdown) throws Exception {
+        coreAccountService.restoreAccount(zipStream, bufferSize, onShutdown);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////

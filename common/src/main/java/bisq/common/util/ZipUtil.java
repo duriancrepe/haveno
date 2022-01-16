@@ -111,6 +111,13 @@ public class ZipUtil {
                     // Make sure folder exists.
                     file.getParentFile().mkdirs();
 
+                    log.info("Unzipped file: " + file.getAbsolutePath());
+                    // Don't overwrite the current logs
+                    if ("bisq.log".equals(file.getName())) {
+                        file = new File(file.getParent() + "/" + "bisq.backup.log");
+                        log.info("Unzipped logfile to backup path: " + file.getAbsolutePath());
+                    }
+
                     try (FileOutputStream fileOutput = new FileOutputStream(file)) {
                         while ((count = zipStream.read(buffer)) != -1) {
                             fileOutput.write(buffer, 0, count);
