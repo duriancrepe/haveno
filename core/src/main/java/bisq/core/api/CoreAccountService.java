@@ -17,6 +17,8 @@
 
 package bisq.core.api;
 
+import bisq.core.btc.wallet.WalletsManager;
+
 import bisq.common.config.Config;
 import bisq.common.crypto.IncorrectPasswordException;
 import bisq.common.crypto.KeyRing;
@@ -50,19 +52,21 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CoreAccountService {
 
-    private Config config;
-    private KeyStorage keyStorage;
-    private KeyRing keyRing;
+    private final Config config;
+    private final KeyStorage keyStorage;
+    private final KeyRing keyRing;
+    private final CoreWalletsService walletsService;
 
     private Runnable accountOpenedHandler;
     private Consumer<Runnable> accountDeletedHandler;
     private Consumer<Runnable> accountRestoredHandler;
 
     @Inject
-    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing) {
+    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing, CoreWalletsService walletsService) {
         this.config = config;
         this.keyStorage = keyStorage;
         this.keyRing = keyRing;
+        this.walletsService = walletsService;
     }
 
     public void setAccountDeletedHandler(Consumer<Runnable> handler) {
@@ -133,6 +137,8 @@ public class CoreAccountService {
 
         // Encrypt the keyring with the new password.
         keyStorage.saveKeyRing(keyRing, password);
+        // TODO: Override the wallet password
+        //walletsService.setWalletPassword(password, null);
     }
 
     /**
@@ -161,6 +167,9 @@ public class CoreAccountService {
         // A new account has a set of keys, password protected.
         keyRing.generateKeys(password);
         keyStorage.saveKeyRing(keyRing, password);
+
+        // TODO: Set the wallet password
+        //walletsService.setWalletPassword(password, null);
 
         if (accountOpenedHandler != null)
             accountOpenedHandler.run();
