@@ -55,18 +55,16 @@ public class CoreAccountService {
     private final Config config;
     private final KeyStorage keyStorage;
     private final KeyRing keyRing;
-    private final CoreWalletsService walletsService;
 
     private Runnable accountOpenedHandler;
     private Consumer<Runnable> accountDeletedHandler;
     private Consumer<Runnable> accountRestoredHandler;
 
     @Inject
-    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing, CoreWalletsService walletsService) {
+    public CoreAccountService(Config config, KeyStorage keyStorage, KeyRing keyRing) {
         this.config = config;
         this.keyStorage = keyStorage;
         this.keyRing = keyRing;
-        this.walletsService = walletsService;
     }
 
     public void setAccountDeletedHandler(Consumer<Runnable> handler) {
