@@ -54,17 +54,6 @@ arbitrator-desktop:
 		--apiPassword=apitest \
 		--apiPort=9998
 
-arbitrator-daemon:
-	# Arbitrator and mediator need to be registerd in the UI before launching the daemon.
-	./haveno-daemon \
-		--baseCurrencyNetwork=XMR_STAGENET \
-		--useLocalhostForP2P=true \
-		--useDevPrivilegeKeys=true \
-		--nodePort=4444 \
-		--appName=haveno-XMR_STAGENET_arbitrator \
-		--apiPassword=apitest \
-		--apiPort=9998
-
 arbitrator-desktop2:
 	# Arbitrator and mediator need to be registerd in the UI after launching it.
 	./haveno-desktop \
@@ -75,6 +64,18 @@ arbitrator-desktop2:
 		--appName=haveno-XMR_STAGENET_arbitrator2 \
 		--apiPassword=apitest \
 		--apiPort=10001
+
+arbitrator-daemon:
+	# Arbitrator and mediator need to be registerd in the UI before launching the daemon!
+	./haveno-daemon \
+		--baseCurrencyNetwork=XMR_STAGENET \
+		--useLocalhostForP2P=true \
+		--useDevPrivilegeKeys=true \
+		--nodePort=4444 \
+		--appName=haveno-XMR_STAGENET_arbitrator \
+		--apiPassword=apitest \
+		--apiPort=9998 \
+		--passwordRequired=true
 
 alice-desktop:
 	./haveno-desktop \
@@ -96,7 +97,8 @@ alice-daemon:
 		--appName=haveno-XMR_STAGENET_Alice \
 		--apiPassword=apitest \
 		--apiPort=9999 \
-		--walletRpcBindPort=38091
+		--walletRpcBindPort=38091 \
+		--passwordRequired=true
 
 bob-desktop:
 	./haveno-desktop \
@@ -118,7 +120,8 @@ bob-daemon:
 		--appName=haveno-XMR_STAGENET_Bob \
 		--apiPassword=apitest \
 		--apiPort=10000 \
-		--walletRpcBindPort=38092
+		--walletRpcBindPort=38092 \
+		--passwordRequired=true
 
 monero-shared:
 	./.localnet/monerod \
@@ -159,7 +162,7 @@ monero-private2:
 		--rpc-login superuser:abctesting123 \
 		--rpc-access-control-origins http://localhost:8080 \
 		--fixed-difficulty 100
-		
+
 funding-wallet:
 	./.localnet/monero-wallet-rpc \
 		--stagenet \
