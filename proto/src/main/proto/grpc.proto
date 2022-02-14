@@ -191,7 +191,6 @@ message OpenDisputeRequest {
 }
 
 message OpenDisputeReply {
-
 }
 
 message ResolveDisputeReply {
@@ -201,9 +200,9 @@ message ResolveDisputeRequest {
     string trade_id = 1;
     DisputeResult.Winner winner = 2;
     DisputeResult.Reason reason = 3;
-    string summaryNotes = 4;
-    int64 buyer_payout_amount = 5;
-    int64 seller_payout_amount = 6;
+    string summary_notes = 4;
+    uint64 buyer_payout_amount = 5 [jstype = JS_STRING];
+    uint64 seller_payout_amount = 6 [jstype = JS_STRING];
 }
 
 message SendDisputeChatMessageRequest {

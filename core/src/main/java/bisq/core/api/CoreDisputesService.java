@@ -129,6 +129,9 @@ public class CoreDisputesService {
                 SupportType.ARBITRATION);
 
         trade.setDisputeState(Trade.DisputeState.DISPUTE_REQUESTED);
+
+        // Sends the openNewDisputeMessage to arbitrator, who will then create 2 disputes
+        // one for the opener, the other for the peer, see sendPeerOpenedDisputeMessage.
         disputeManager.sendOpenNewDisputeMessage(dispute, false, updatedMultisigHex, resultHandler, faultHandler);
         tradeManager.requestPersistence();
     }
@@ -136,9 +139,17 @@ public class CoreDisputesService {
     public void resolveDispute(String tradeId, DisputeResult.Winner winner, DisputeResult.Reason reason,
                                String summaryNotes, long buyerPayoutAmount, long sellerPayoutAmount) {
         var disputeManager = arbitrationManager;
-        var dispute = getDispute(tradeId);
+
+        // get the opener's dispute to trigger the payout code
+        var disputeOptional = disputeManager.getDisputesAsObservableList().stream()
+                .filter(d -> tradeId.equals(d.getTradeId()) && d.isOpener())
+                .findFirst();
+        Dispute dispute;
+        if (disputeOptional.isPresent()) dispute = disputeOptional.get();
+        else throw new IllegalStateException(format("dispute for tradeId '%s' not found", tradeId));
+
         var contract = dispute.getContract();
-        var disputeResult = new DisputeResult(tradeId, dispute.getTraderId());
+        var disputeResult = new DisputeResult(dispute.getTradeId(), dispute.getTraderId());
         disputeResult.setWinner(winner);
         disputeResult.setReason(reason);
         disputeResult.setSummaryNotes(summaryNotes);
@@ -174,12 +185,30 @@ public class CoreDisputesService {
             throw new IllegalStateException(e2);
         }
 
+        // Close the disputes
+        var closeDate = new Date();
+        disputeResult.setCloseDate(closeDate);
         closeDispute(disputeManager, disputeResult, dispute, false);
+
+        var peersDisputeOptional = disputeManager.getDisputesAsObservableList().stream()
+                .filter(d -> dispute.getTradeId().equals(d.getTradeId()) && dispute.getTraderId() != d.getTraderId())
+                .findFirst();
+
+        if (peersDisputeOptional.isPresent()) {
+            var peerDispute = peersDisputeOptional.get();
+            var peerDisputeResult = new DisputeResult(peerDispute.getTradeId(), peerDispute.getTraderId());
+            peerDisputeResult.setWinner(winner);
+            peerDisputeResult.setReason(reason);
+            peerDisputeResult.setSummaryNotes(summaryNotes);
+            peerDisputeResult.setBuyerPayoutAmount(Coin.valueOf(buyerPayoutAmount));
+            peerDisputeResult.setSellerPayoutAmount(Coin.valueOf(sellerPayoutAmount));
+            peerDisputeResult.setCloseDate(closeDate);
+            closeDispute(disputeManager, peerDisputeResult, peerDispute, false);
+        }
     }
 
     // From DisputeSummaryWindow.java
     private void closeDispute(DisputeManager disputeManager, DisputeResult disputeResult, Dispute dispute, boolean isRefundAgent) {
-        disputeResult.setCloseDate(new Date());
         dispute.setDisputeResult(disputeResult);
         dispute.setIsClosed();
         DisputeResult.Reason reason = disputeResult.getReason();

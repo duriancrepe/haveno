@@ -3,6 +3,7 @@ package bisq.daemon.grpc;
 import bisq.core.api.CoreApi;
 import bisq.core.support.dispute.Attachment;
 import bisq.core.support.dispute.DisputeResult;
+import bisq.core.util.ParsingUtils;
 
 import bisq.common.proto.ProtoUtil;
 
@@ -105,10 +106,12 @@ public class GrpcDisputesService extends DisputesImplBase {
     @Override
     public void resolveDispute(ResolveDisputeRequest req, StreamObserver<ResolveDisputeReply> responseObserver) {
         try {
-            //winner: DisputeResult.WINNER, reason: DisputeResult.REASON, summaryNotes: string, customAmount?: bigint
             var winner = ProtoUtil.enumFromProto(DisputeResult.Winner.class, req.getWinner().name());
             var reason = ProtoUtil.enumFromProto(DisputeResult.Reason.class, req.getReason().name());
-            coreApi.resolveDispute(req.getTradeId(), winner, reason, req.getSummaryNotes(), req.getBuyerPayoutAmount(), req.getSellerPayoutAmount());
+            // scale atomic unit to centineros for consistency TODO switch base to atomic units?
+            var buyerAmount = ParsingUtils.atomicUnitsToCentineros(req.getBuyerPayoutAmount());
+            var sellerAmount = ParsingUtils.atomicUnitsToCentineros(req.getSellerPayoutAmount());
+            coreApi.resolveDispute(req.getTradeId(), winner, reason, req.getSummaryNotes(), buyerAmount, sellerAmount);
             var reply = ResolveDisputeReply.newBuilder().build();
             responseObserver.onNext(reply);
             responseObserver.onCompleted();
