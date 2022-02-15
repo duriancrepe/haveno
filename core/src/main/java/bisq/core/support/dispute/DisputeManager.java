@@ -18,6 +18,7 @@
 package bisq.core.support.dispute;
 
 import bisq.core.api.CoreMoneroConnectionsService;
+import bisq.core.api.CoreNotificationService;
 import bisq.core.btc.wallet.Restrictions;
 import bisq.core.btc.wallet.TradeWalletService;
 import bisq.core.btc.wallet.XmrWalletService;
@@ -111,6 +112,7 @@ public abstract class DisputeManager<T extends DisputeList<Dispute>> extends Sup
                           TradeWalletService tradeWalletService,
                           XmrWalletService xmrWalletService,
                           CoreMoneroConnectionsService connectionService,
+                          CoreNotificationService notificationService,
                           TradeManager tradeManager,
                           ClosedTradableManager closedTradableManager,
                           OpenOfferManager openOfferManager,
@@ -118,7 +120,7 @@ public abstract class DisputeManager<T extends DisputeList<Dispute>> extends Sup
                           DisputeListService<T> disputeListService,
                           Config config,
                           PriceFeedService priceFeedService) {
-        super(p2PService, connectionService);
+        super(p2PService, connectionService, notificationService);
 
         this.tradeWalletService = tradeWalletService;
         this.xmrWalletService = xmrWalletService;

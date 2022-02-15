@@ -18,6 +18,7 @@
 package bisq.core.support.dispute.arbitration;
 
 import bisq.core.api.CoreMoneroConnectionsService;
+import bisq.core.api.CoreNotificationService;
 import bisq.core.btc.wallet.TradeWalletService;
 import bisq.core.btc.wallet.XmrWalletService;
 import bisq.core.locale.Res;
@@ -96,6 +97,7 @@ public final class ArbitrationManager extends DisputeManager<ArbitrationDisputeL
                               TradeWalletService tradeWalletService,
                               XmrWalletService walletService,
                               CoreMoneroConnectionsService connectionService,
+                              CoreNotificationService notificationService,
                               TradeManager tradeManager,
                               ClosedTradableManager closedTradableManager,
                               OpenOfferManager openOfferManager,
@@ -103,7 +105,7 @@ public final class ArbitrationManager extends DisputeManager<ArbitrationDisputeL
                               ArbitrationDisputeListService arbitrationDisputeListService,
                               Config config,
                               PriceFeedService priceFeedService) {
-        super(p2PService, tradeWalletService, walletService, connectionService, tradeManager, closedTradableManager,
+        super(p2PService, tradeWalletService, walletService, connectionService, notificationService, tradeManager, closedTradableManager,
                 openOfferManager, keyRing, arbitrationDisputeListService, config, priceFeedService);
     }
 
