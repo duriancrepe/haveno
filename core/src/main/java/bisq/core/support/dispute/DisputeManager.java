@@ -288,17 +288,6 @@ public abstract class DisputeManager<T extends DisputeList<Dispute>> extends Sup
         return pubKeyRing.equals(dispute.getTraderPubKeyRing());
     }
 
-
-    public Optional<Dispute> findOwnDispute(String tradeId) {
-        T disputeList = getDisputeList();
-        if (disputeList == null) {
-            log.warn("disputes is null");
-            return Optional.empty();
-        }
-        return disputeList.stream().filter(e -> e.getTradeId().equals(tradeId)).findAny();
-    }
-
-
     ///////////////////////////////////////////////////////////////////////////////////////////
     // Message handler
     ///////////////////////////////////////////////////////////////////////////////////////////
@@ -820,6 +809,17 @@ public abstract class DisputeManager<T extends DisputeList<Dispute>> extends Sup
         }
         return disputeList.stream()
                 .filter(e -> e.getTradeId().equals(tradeId))
+                .findAny();
+    }
+
+    public Optional<Dispute> findDisputeById(String disputeId) {
+        T disputeList = getDisputeList();
+        if (disputeList == null) {
+            log.warn("disputes is null");
+            return Optional.empty();
+        }
+        return disputeList.stream()
+                .filter(e -> e.getId().equals(disputeId))
                 .findAny();
     }
 

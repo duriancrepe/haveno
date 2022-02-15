@@ -79,12 +79,12 @@ public class CoreDisputesService {
     public Dispute getDispute(String tradeId) {
         Optional<Dispute> dispute = arbitrationManager.findDispute(tradeId);
         if (dispute.isPresent()) return dispute.get();
-        else throw new IllegalStateException(format("dispute for tradeId '%s' not found", tradeId));
+        else throw new IllegalStateException(format("dispute for trade id '%s' not found", tradeId));
     }
 
     public void openDispute(String tradeId, ResultHandler resultHandler, FaultHandler faultHandler) {
         Trade trade = tradeManager.getTradeById(tradeId).orElseThrow(() ->
-                new IllegalArgumentException(format("tradeId '%s' not found", tradeId)));
+                new IllegalArgumentException(format("trade with id '%s' not found", tradeId)));
 
         Offer offer = trade.getOffer();
         if (offer == null) throw new IllegalStateException(format("offer with tradeId '%s' is null", tradeId));
@@ -249,12 +249,16 @@ public class CoreDisputesService {
         disputeManager.requestPersistence();
     }
 
-    public void sendDisputeChatMessage(String tradeId, String message, ArrayList<Attachment> attachments) {
-        var dispute = getDispute(tradeId);
+    public void sendDisputeChatMessage(String disputeId, String message, ArrayList<Attachment> attachments) {
+        log.error("sending chat message for: " + disputeId + " " + message);
+        var disputeOptional = arbitrationManager.findDisputeById(disputeId);
+        Dispute dispute;
+        if (disputeOptional.isPresent()) dispute = disputeOptional.get();
+        else throw new IllegalStateException(format("dispute with id '%s' not found", disputeId));
         ChatMessage chatMessage = new ChatMessage(
                 arbitrationManager.getSupportType(),
                 dispute.getTradeId(),
-                keyRing.getPubKeyRing().hashCode(),
+                dispute.getTraderId(),
                 arbitrationManager.isTrader(dispute),
                 message,
                 p2PService.getAddress(),

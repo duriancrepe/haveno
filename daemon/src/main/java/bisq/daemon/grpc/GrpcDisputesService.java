@@ -127,7 +127,7 @@ public class GrpcDisputesService extends DisputesImplBase {
             var attachmentsProto = req.getAttachmentsList();
             var attachments = attachmentsProto.stream().map(a -> Attachment.fromProto(a))
                     .collect(Collectors.toList());
-            coreApi.sendDisputeChatMessage(req.getTradeId(), req.getMessage(), new ArrayList(attachments));
+            coreApi.sendDisputeChatMessage(req.getDisputeId(), req.getMessage(), new ArrayList(attachments));
             var reply = SendDisputeChatMessageReply.newBuilder().build();
             responseObserver.onNext(reply);
             responseObserver.onCompleted();

@@ -361,8 +361,8 @@ public class CoreApi {
         coreDisputeService.resolveDispute(tradeId, winner, reason, summaryNotes, buyerPayoutAmount, sellerPayoutAmount);
     }
 
-    public void sendDisputeChatMessage(String tradeId, String message, ArrayList<Attachment> attachments) {
-        coreDisputeService.sendDisputeChatMessage(tradeId, message, attachments);
+    public void sendDisputeChatMessage(String disputeId, String message, ArrayList<Attachment> attachments) {
+        coreDisputeService.sendDisputeChatMessage(disputeId, message, attachments);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////

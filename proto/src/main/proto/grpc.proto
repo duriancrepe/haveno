@@ -206,7 +206,7 @@ message ResolveDisputeRequest {
 }
 
 message SendDisputeChatMessageRequest {
-    string trade_id = 1;
+    string dispute_id = 1;
     string message = 2;
     repeated Attachment attachments = 3; // pb.proto
 }
