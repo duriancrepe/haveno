@@ -357,8 +357,8 @@ public class CoreApi {
     }
 
     public void resolveDispute(String tradeId, DisputeResult.Winner winner, DisputeResult.Reason reason,
-                               String summaryNotes, long buyerPayoutAmount, long sellerPayoutAmount) {
-        coreDisputeService.resolveDispute(tradeId, winner, reason, summaryNotes, buyerPayoutAmount, sellerPayoutAmount);
+                               String summaryNotes, long customPayoutAmount) {
+        coreDisputeService.resolveDispute(tradeId, winner, reason, summaryNotes, customPayoutAmount);
     }
 
     public void sendDisputeChatMessage(String disputeId, String message, ArrayList<Attachment> attachments) {

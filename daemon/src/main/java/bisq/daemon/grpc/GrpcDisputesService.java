@@ -109,9 +109,8 @@ public class GrpcDisputesService extends DisputesImplBase {
             var winner = ProtoUtil.enumFromProto(DisputeResult.Winner.class, req.getWinner().name());
             var reason = ProtoUtil.enumFromProto(DisputeResult.Reason.class, req.getReason().name());
             // scale atomic unit to centineros for consistency TODO switch base to atomic units?
-            var buyerAmount = ParsingUtils.atomicUnitsToCentineros(req.getBuyerPayoutAmount());
-            var sellerAmount = ParsingUtils.atomicUnitsToCentineros(req.getSellerPayoutAmount());
-            coreApi.resolveDispute(req.getTradeId(), winner, reason, req.getSummaryNotes(), buyerAmount, sellerAmount);
+            var customPayoutAmount = ParsingUtils.atomicUnitsToCentineros(req.getCustomPayoutAmount());
+            coreApi.resolveDispute(req.getTradeId(), winner, reason, req.getSummaryNotes(), customPayoutAmount);
             var reply = ResolveDisputeReply.newBuilder().build();
             responseObserver.onNext(reply);
             responseObserver.onCompleted();

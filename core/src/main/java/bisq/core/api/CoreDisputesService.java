@@ -48,6 +48,14 @@ import monero.wallet.model.MoneroTxWallet;
 @Slf4j
 public class CoreDisputesService {
 
+    public enum DisputePayout {
+        BUYER_GETS_TRADE_AMOUNT,
+        BUYER_GETS_ALL, // used in desktop
+        SELLER_GETS_TRADE_AMOUNT,
+        SELLER_GETS_ALL, // used in desktop
+        CUSTOM
+    }
+
     private final ArbitrationManager arbitrationManager;
     private final CoinFormatter formatter;
     private final KeyRing keyRing;
@@ -136,23 +144,32 @@ public class CoreDisputesService {
         return dispute;
     }
 
-    public void resolveDispute(String tradeId, DisputeResult.Winner winner, DisputeResult.Reason reason,
-                               String summaryNotes, long buyerPayoutAmount, long sellerPayoutAmount) {
+    public void resolveDispute(String tradeId, DisputeResult.Winner winner, DisputeResult.Reason reason, String summaryNotes, long customAmount) {
 
         var disputeManager = arbitrationManager;
 
-        // get the opener's dispute to trigger the payout code
         var disputeOptional = disputeManager.getDisputesAsObservableList().stream()
-                .filter(d -> tradeId.equals(d.getTradeId()) && d.isOpener())
+                .filter(d -> tradeId.equals(d.getTradeId()))
                 .findFirst();
         Dispute dispute;
         if (disputeOptional.isPresent()) dispute = disputeOptional.get();
         else throw new IllegalStateException(format("dispute for tradeId '%s' not found", tradeId));
 
         var closeDate = new Date();
-        var disputeResult = createDisputeResult(dispute, winner, reason, summaryNotes,
-                buyerPayoutAmount, sellerPayoutAmount, closeDate);
+        var disputeResult = createDisputeResult(dispute, winner, reason, summaryNotes, closeDate);
         var contract = dispute.getContract();
+
+        DisputePayout payout;
+        if (customAmount > 0) {
+            payout = DisputePayout.CUSTOM;
+        } else if (winner == DisputeResult.Winner.BUYER) {
+            payout = DisputePayout.BUYER_GETS_TRADE_AMOUNT;
+        } else if (winner == DisputeResult.Winner.SELLER) {
+            payout = DisputePayout.SELLER_GETS_TRADE_AMOUNT;
+        } else {
+            throw new IllegalStateException("Unexpected DisputeResult.Winner: " + winner);
+        }
+        applyPayoutAmountsToDisputeResult(payout, dispute, disputeResult, customAmount);
 
         // resolve the payout for opener
         resolveDisputePayout(dispute, disputeResult, contract);
@@ -162,27 +179,71 @@ public class CoreDisputesService {
 
         // close dispute ticket for peer
         var peersDisputeOptional = disputeManager.getDisputesAsObservableList().stream()
-                .filter(d -> dispute.getTradeId().equals(d.getTradeId()) && dispute.getTraderId() != d.getTraderId())
+                .filter(d -> tradeId.equals(d.getTradeId()) && dispute.getTraderId() != d.getTraderId())
                 .findFirst();
 
         if (peersDisputeOptional.isPresent()) {
             var peerDispute = peersDisputeOptional.get();
-            var peerDisputeResult = createDisputeResult(peerDispute, winner, reason, summaryNotes,
-                    buyerPayoutAmount, sellerPayoutAmount, closeDate);
+            var peerDisputeResult = createDisputeResult(peerDispute, winner, reason, summaryNotes, closeDate);
+            peerDisputeResult.setBuyerPayoutAmount(disputeResult.getBuyerPayoutAmount());
+            peerDisputeResult.setSellerPayoutAmount(disputeResult.getSellerPayoutAmount());
+            peerDisputeResult.setLoserPublisher(disputeResult.isLoserPublisher());
+            resolveDisputePayout(peerDispute, peerDisputeResult, contract);
             closeDispute(disputeManager, peerDispute, peerDisputeResult, false);
+        } else {
+            throw new IllegalStateException("could not find peer dispute");
         }
+
+        disputeManager.requestPersistence();
     }
 
     private DisputeResult createDisputeResult(Dispute dispute, DisputeResult.Winner winner, DisputeResult.Reason reason,
-                                              String summaryNotes, long buyerPayoutAmount, long sellerPayoutAmount, Date closeDate) {
+                                              String summaryNotes, Date closeDate) {
         var disputeResult = new DisputeResult(dispute.getTradeId(), dispute.getTraderId());
         disputeResult.setWinner(winner);
         disputeResult.setReason(reason);
         disputeResult.setSummaryNotes(summaryNotes);
-        disputeResult.setBuyerPayoutAmount(Coin.valueOf(buyerPayoutAmount));
-        disputeResult.setSellerPayoutAmount(Coin.valueOf(sellerPayoutAmount));
         disputeResult.setCloseDate(closeDate);
         return disputeResult;
+    }
+
+    /**
+     * Sets payout amounts given a payout type. If custom is selected, the winner gets a custom amount, and the peer
+     * receives the remaining amount.
+     */
+    public void applyPayoutAmountsToDisputeResult(DisputePayout payout, Dispute dispute, DisputeResult disputeResult, long customAmount) {
+        Contract contract = dispute.getContract();
+        Offer offer = new Offer(contract.getOfferPayload());
+        Coin buyerSecurityDeposit = offer.getBuyerSecurityDeposit();
+        Coin sellerSecurityDeposit = offer.getSellerSecurityDeposit();
+        Coin tradeAmount = contract.getTradeAmount();
+        if (payout == DisputePayout.BUYER_GETS_TRADE_AMOUNT) {
+            disputeResult.setBuyerPayoutAmount(tradeAmount.add(buyerSecurityDeposit));
+            disputeResult.setSellerPayoutAmount(sellerSecurityDeposit);
+        } else if (payout == DisputePayout.BUYER_GETS_ALL) {
+            disputeResult.setBuyerPayoutAmount(tradeAmount
+                    .add(buyerSecurityDeposit)
+                    .add(sellerSecurityDeposit)); // TODO (woodser): apply min payout to incentivize loser (see post v1.1.7)
+            disputeResult.setSellerPayoutAmount(Coin.ZERO);
+        } else if (payout == DisputePayout.SELLER_GETS_TRADE_AMOUNT) {
+            disputeResult.setBuyerPayoutAmount(buyerSecurityDeposit);
+            disputeResult.setSellerPayoutAmount(tradeAmount.add(sellerSecurityDeposit));
+        } else if (payout == DisputePayout.SELLER_GETS_ALL) {
+            disputeResult.setBuyerPayoutAmount(Coin.ZERO);
+            disputeResult.setSellerPayoutAmount(tradeAmount
+                    .add(sellerSecurityDeposit)
+                    .add(buyerSecurityDeposit));
+        } else if (payout == DisputePayout.CUSTOM) {
+            Coin winnerAmount = Coin.valueOf(customAmount);
+            Coin loserAmount = tradeAmount.minus(winnerAmount);
+            if (disputeResult.getWinner() == DisputeResult.Winner.BUYER) {
+                disputeResult.setBuyerPayoutAmount(winnerAmount.add(buyerSecurityDeposit));
+                disputeResult.setSellerPayoutAmount(loserAmount.add(sellerSecurityDeposit));
+            } else {
+                disputeResult.setBuyerPayoutAmount(loserAmount.add(buyerSecurityDeposit));
+                disputeResult.setSellerPayoutAmount(winnerAmount.add(sellerSecurityDeposit));
+            }
+        }
     }
 
     public void resolveDisputePayout(Dispute dispute, DisputeResult disputeResult, Contract contract) {
@@ -258,7 +319,6 @@ public class CoreDisputesService {
             summaryText += Res.get("disputeSummaryWindow.close.nextStepsForMediation");
         }
         disputeManager.sendDisputeResultMessage(disputeResult, dispute, summaryText);
-        disputeManager.requestPersistence();
     }
 
     public void sendDisputeChatMessage(String disputeId, String message, ArrayList<Attachment> attachments) {

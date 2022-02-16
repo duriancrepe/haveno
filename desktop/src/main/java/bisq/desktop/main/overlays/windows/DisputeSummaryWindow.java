@@ -102,7 +102,6 @@ public class DisputeSummaryWindow extends Overlay<DisputeSummaryWindow> {
     private final TradeWalletService tradeWalletService;  // TODO (woodser): remove for xmr or adapt to get/create multisig wallets for tx creation utils
     private final CoreDisputesService disputesService;
     private Dispute dispute;
-    private Optional<Runnable> finalizeDisputeHandlerOptional = Optional.empty();
     private ToggleGroup tradeAmountToggleGroup, reasonToggleGroup;
     private DisputeResult disputeResult;
     private RadioButton buyerGetsTradeAmountRadioButton, sellerGetsTradeAmountRadioButton,
@@ -163,12 +162,6 @@ public class DisputeSummaryWindow extends Overlay<DisputeSummaryWindow> {
             });
         }
     }
-
-    public DisputeSummaryWindow onFinalizeDispute(Runnable finalizeDisputeHandler) {
-        this.finalizeDisputeHandlerOptional = Optional.of(finalizeDisputeHandler);
-        return this;
-    }
-
 
     ///////////////////////////////////////////////////////////////////////////////////////////
     // Protected
@@ -788,10 +781,8 @@ public class DisputeSummaryWindow extends Overlay<DisputeSummaryWindow> {
                     200, TimeUnit.MILLISECONDS);
         }
 
-        finalizeDisputeHandlerOptional.ifPresent(Runnable::run);
-
+        disputeManager.requestPersistence();
         closeTicketButton.disableProperty().unbind();
-
         hide();
     }
 
@@ -812,33 +803,24 @@ public class DisputeSummaryWindow extends Overlay<DisputeSummaryWindow> {
     }
 
     private void applyPayoutAmountsToDisputeResult(Toggle selectedTradeAmountToggle) {
-        Contract contract = dispute.getContract();
-        Offer offer = new Offer(contract.getOfferPayload());
-        Coin buyerSecurityDeposit = offer.getBuyerSecurityDeposit();
-        Coin sellerSecurityDeposit = offer.getSellerSecurityDeposit();
-        Coin tradeAmount = contract.getTradeAmount();
+        CoreDisputesService.DisputePayout payout;
         if (selectedTradeAmountToggle == buyerGetsTradeAmountRadioButton) {
-            disputeResult.setBuyerPayoutAmount(tradeAmount.add(buyerSecurityDeposit));
-            disputeResult.setSellerPayoutAmount(sellerSecurityDeposit);
+            payout = CoreDisputesService.DisputePayout.BUYER_GETS_TRADE_AMOUNT;
             disputeResult.setWinner(DisputeResult.Winner.BUYER);
         } else if (selectedTradeAmountToggle == buyerGetsAllRadioButton) {
-            disputeResult.setBuyerPayoutAmount(tradeAmount
-                    .add(buyerSecurityDeposit)
-                    .add(sellerSecurityDeposit)); // TODO (woodser): apply min payout to incentivize loser (see post v1.1.7)
-            disputeResult.setSellerPayoutAmount(Coin.ZERO);
+            payout = CoreDisputesService.DisputePayout.BUYER_GETS_ALL;
             disputeResult.setWinner(DisputeResult.Winner.BUYER);
         } else if (selectedTradeAmountToggle == sellerGetsTradeAmountRadioButton) {
-            disputeResult.setBuyerPayoutAmount(buyerSecurityDeposit);
-            disputeResult.setSellerPayoutAmount(tradeAmount.add(sellerSecurityDeposit));
+            payout = CoreDisputesService.DisputePayout.SELLER_GETS_TRADE_AMOUNT;
             disputeResult.setWinner(DisputeResult.Winner.SELLER);
         } else if (selectedTradeAmountToggle == sellerGetsAllRadioButton) {
-            disputeResult.setBuyerPayoutAmount(Coin.ZERO);
-            disputeResult.setSellerPayoutAmount(tradeAmount
-                    .add(sellerSecurityDeposit)
-                    .add(buyerSecurityDeposit));
+            payout = CoreDisputesService.DisputePayout.SELLER_GETS_ALL;
             disputeResult.setWinner(DisputeResult.Winner.SELLER);
+        } else {
+            // should not happen
+            throw new IllegalStateException("Unknown radio button");
         }
-
+        disputesService.applyPayoutAmountsToDisputeResult(payout, dispute, disputeResult, -1);
         buyerPayoutAmountInputTextField.setText(formatter.formatCoin(disputeResult.getBuyerPayoutAmount()));
         sellerPayoutAmountInputTextField.setText(formatter.formatCoin(disputeResult.getSellerPayoutAmount()));
     }

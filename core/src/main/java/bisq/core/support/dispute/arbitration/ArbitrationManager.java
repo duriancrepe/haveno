@@ -288,7 +288,7 @@ public final class ArbitrationManager extends DisputeManager<ArbitrationDisputeL
                         MoneroTxSet txSet = traderSignsDisputePayoutTx(tradeId, arbitratorSignedPayoutTxHex);
                         onTraderSignedDisputePayoutTx(tradeId, txSet);
                       } catch (Exception e) {
-                        errorMessage = "Failed to sign dispute payout tx from arbitrator: " + e.getMessage() + ". TradeId = " + tradeId;
+                        errorMessage = "Failed to sign dispute payout tx from arbitrator: " + e.getMessage() + ". TradeId = " + tradeId + " SignedPayoutTx = " + arbitratorSignedPayoutTxHex;
                         log.warn(errorMessage);
                         success = false;
                       }
